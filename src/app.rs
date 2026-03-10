@@ -305,11 +305,11 @@ impl DiskOrbitApp {
             .stroke(Stroke::new(1.0, BORDER))
             .show(ui, |ui: &mut egui::Ui| {
                 // Paint headers using the same pixel math as draw_node
-                let avail  = ui.available_width();
-                let right  = avail;
-                let pct_cx   = right - PCT_W / 2.0;
-                let size_cx  = right - PCT_W - COL_GAP - SIZE_W / 2.0;
-                let bar_cx   = right - PCT_W - COL_GAP - SIZE_W - COL_GAP - BAR_W / 2.0;
+                let avail      = ui.available_width();
+                let right      = avail;
+                let pct_right  = right;
+                let size_right = right - PCT_W - COL_GAP;
+                let bar_right  = size_right - SIZE_W - COL_GAP;
 
                 let (rect, _) = ui.allocate_exact_size(Vec2::new(avail, 18.0), egui::Sense::hover());
                 let p = ui.painter();
@@ -317,11 +317,11 @@ impl DiskOrbitApp {
 
                 p.text(egui::pos2(rect.min.x, cy), egui::Align2::LEFT_CENTER,
                     "NAME", mono(11.0), TEXT_MUTED);
-                p.text(egui::pos2(rect.min.x + bar_cx, cy), egui::Align2::CENTER_CENTER,
+                p.text(egui::pos2(rect.min.x + bar_right, cy), egui::Align2::RIGHT_CENTER,
                     "USAGE", mono(11.0), TEXT_MUTED);
-                p.text(egui::pos2(rect.min.x + size_cx, cy), egui::Align2::CENTER_CENTER,
+                p.text(egui::pos2(rect.min.x + size_right, cy), egui::Align2::RIGHT_CENTER,
                     "SIZE", mono(11.0), TEXT_MUTED);
-                p.text(egui::pos2(rect.min.x + pct_cx, cy), egui::Align2::CENTER_CENTER,
+                p.text(egui::pos2(rect.min.x + pct_right, cy), egui::Align2::RIGHT_CENTER,
                     "%", mono(11.0), TEXT_MUTED);
             });
     }
