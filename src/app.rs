@@ -675,6 +675,68 @@ fn drive_usage(root: &str) -> Option<(u64, u64, u64)> {
     { let _ = root; None }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::scanner::FolderNode;
+
+    fn make_leaf(name: &str, size: u64) -> FolderNode {
+        FolderNode {
+            name:       name.into(),
+            full_path:  name.into(),
+            is_file:    true,
+            size_bytes: size,
+            percentage: 0.0,
+            children:   vec![],
+        }
+    }
+
+    fn make_dir(name: &str, children: Vec<FolderNode>) -> FolderNode {
+        let size: u64 = children.iter().map(|c| c.size_bytes).sum();
+        FolderNode {
+            name:       name.into(),
+            full_path:  name.into(),
+            is_file:    false,
+            size_bytes: size,
+            percentage: 0.0,
+            children,
+        }
+    }
+
+    #[test]
+    fn count_items_single_leaf() {
+        assert_eq!(count_items(&make_leaf("a.txt", 0)), 1);
+    }
+
+    #[test]
+    fn count_items_flat_directory() {
+        let dir = make_dir("root", vec![
+            make_leaf("a.txt", 100),
+            make_leaf("b.txt", 200),
+        ]);
+        assert_eq!(count_items(&dir), 3); // root + 2 children
+    }
+
+    #[test]
+    fn count_items_nested() {
+        let inner = make_dir("inner", vec![make_leaf("x.txt", 10)]);
+        let root  = make_dir("root",  vec![inner, make_leaf("y.txt", 20)]);
+        assert_eq!(count_items(&root), 4); // root + inner + x + y
+    }
+
+    #[test]
+    fn is_admin_does_not_panic() {
+        // Platform-specific; we just verify it returns without panicking.
+        let _ = is_admin();
+    }
+
+    #[test]
+    fn available_drives_nonempty() {
+        let drives = available_drives();
+        assert!(!drives.is_empty(), "should always have at least one drive/root");
+    }
+}
+
 fn apply_theme(ctx: &egui::Context) {
     let mut s = (*ctx.style()).clone();
     s.visuals.dark_mode                        = true;

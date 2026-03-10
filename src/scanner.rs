@@ -146,3 +146,145 @@ pub fn fmt_bytes(bytes: u64) -> String {
         b                       => format!("{} B",     b),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{mpsc, Arc};
+    use std::sync::atomic::AtomicBool;
+
+    // ── fmt_bytes ──────────────────────────────────────────────────────────────
+
+    #[test]
+    fn fmt_bytes_zero() {
+        assert_eq!(fmt_bytes(0), "0 B");
+    }
+
+    #[test]
+    fn fmt_bytes_bytes_range() {
+        assert_eq!(fmt_bytes(1),    "1 B");
+        assert_eq!(fmt_bytes(512),  "512 B");
+        assert_eq!(fmt_bytes(1023), "1023 B");
+    }
+
+    #[test]
+    fn fmt_bytes_kilobytes() {
+        assert_eq!(fmt_bytes(1_024),       "1 KB");
+        assert_eq!(fmt_bytes(1_536),       "2 KB");   // 1.5 KB rounds to 2
+        assert_eq!(fmt_bytes(1_048_575),   "1024 KB"); // just below 1 MB
+    }
+
+    #[test]
+    fn fmt_bytes_megabytes() {
+        assert_eq!(fmt_bytes(1_048_576),   "1 MB");
+        assert_eq!(fmt_bytes(1_572_864),   "2 MB");   // 1.5 MB rounds to 2
+        assert_eq!(fmt_bytes(1_073_741_823), "1024 MB"); // just below 1 GB
+    }
+
+    #[test]
+    fn fmt_bytes_gigabytes() {
+        assert_eq!(fmt_bytes(1_073_741_824), "1.0 GB");
+        assert_eq!(fmt_bytes(2_684_354_560), "2.5 GB");
+        assert_eq!(fmt_bytes(10_737_418_240), "10.0 GB");
+    }
+
+    // ── FolderNode ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn folder_node_size_display() {
+        let node = FolderNode {
+            name:       "file.txt".into(),
+            full_path:  "/tmp/file.txt".into(),
+            is_file:    true,
+            size_bytes: 2_048,
+            percentage: 50.0,
+            children:   vec![],
+        };
+        assert_eq!(node.size_display(), "2 KB");
+    }
+
+    #[test]
+    fn folder_node_clone_preserves_fields() {
+        let original = FolderNode {
+            name:       "dir".into(),
+            full_path:  "/tmp/dir".into(),
+            is_file:    false,
+            size_bytes: 4_096,
+            percentage: 75.0,
+            children:   vec![],
+        };
+        let cloned = original.clone();
+        assert_eq!(cloned.name,       original.name);
+        assert_eq!(cloned.size_bytes, original.size_bytes);
+        assert_eq!(cloned.percentage, original.percentage);
+    }
+
+    // ── start_scan ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn scan_finds_files_and_reports_correct_totals() {
+        let dir = std::env::temp_dir().join("diskorbit_test_scan_totals");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("small.txt"),  b"hello").unwrap();          // 5 B
+        std::fs::write(dir.join("large.txt"),  b"hello world!").unwrap();   // 12 B
+
+        let cancel = Arc::new(AtomicBool::new(false));
+        let (tx, rx) = mpsc::channel();
+        start_scan(dir.to_string_lossy().into_owned(), tx, cancel);
+
+        let result = rx.iter().find_map(|msg| match msg {
+            ScanMsg::Done(node)  => Some(Ok(node)),
+            ScanMsg::Error(e)    => Some(Err(e)),
+            ScanMsg::Progress(_) => None,
+        });
+        std::fs::remove_dir_all(&dir).ok();
+
+        let node = result
+            .expect("channel closed before Done/Error")
+            .expect("scan returned error");
+
+        assert_eq!(node.size_bytes,    17);
+        assert_eq!(node.children.len(), 2);
+        // Children are sorted largest-first
+        assert!(node.children[0].size_bytes >= node.children[1].size_bytes);
+    }
+
+    #[test]
+    fn scan_sets_percentages() {
+        let dir = std::env::temp_dir().join("diskorbit_test_scan_pct");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("half_a.bin"), vec![0u8; 512]).unwrap();
+        std::fs::write(dir.join("half_b.bin"), vec![0u8; 512]).unwrap();
+
+        let cancel = Arc::new(AtomicBool::new(false));
+        let (tx, rx) = mpsc::channel();
+        start_scan(dir.to_string_lossy().into_owned(), tx, cancel);
+
+        let result = rx.iter().find_map(|msg| match msg {
+            ScanMsg::Done(node)  => Some(node),
+            ScanMsg::Error(_)    => None,
+            ScanMsg::Progress(_) => None,
+        });
+        std::fs::remove_dir_all(&dir).ok();
+
+        let node = result.expect("scan should complete");
+        for child in &node.children {
+            let diff = (child.percentage - 50.0).abs();
+            assert!(diff < 0.1, "expected ~50 %, got {:.2} %", child.percentage);
+        }
+    }
+
+    #[test]
+    fn scan_cancels_early() {
+        let dir = std::env::temp_dir().join("diskorbit_test_scan_cancel");
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let cancel = Arc::new(AtomicBool::new(true)); // pre-cancelled
+        let (tx, rx) = mpsc::channel();
+        start_scan(dir.to_string_lossy().into_owned(), tx, cancel);
+
+        let got_error = rx.iter().any(|msg| matches!(msg, ScanMsg::Error(_)));
+        std::fs::remove_dir_all(&dir).ok();
+        assert!(got_error, "pre-cancelled scan should send ScanMsg::Error");
+    }
+}
