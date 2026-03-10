@@ -277,8 +277,8 @@ impl DiskOrbitApp {
                             }
 
                             // CANCEL — only while scanning
-                            if self.is_scanning {
-                                if ui
+                            if self.is_scanning
+                                && ui
                                     .add(
                                         egui::Button::new(
                                             RichText::new("CANCEL")
@@ -290,9 +290,8 @@ impl DiskOrbitApp {
                                         .rounding(4.0),
                                     )
                                     .clicked()
-                                {
-                                    self.do_cancel();
-                                }
+                            {
+                                self.do_cancel();
                             }
 
                             // Drive usage — right-aligned
@@ -613,7 +612,7 @@ fn clamp_text(s: &str, max_px: f32, ui: &egui::Ui, font: FontId) -> String {
     let chars: Vec<char> = s.chars().collect();
     let (mut lo, mut hi) = (0usize, chars.len());
     while lo < hi {
-        let mid = (lo + hi + 1) / 2;
+        let mid = (lo + hi).div_ceil(2);
         let cand = chars[..mid].iter().collect::<String>() + "…";
         if fonts
             .layout_no_wrap(cand, font.clone(), TEXT_PRIMARY)
