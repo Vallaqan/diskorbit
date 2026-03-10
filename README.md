@@ -1,6 +1,6 @@
 # DiskOrbit
 
-[![CI](https://github.com/your-username/diskorbit/actions/workflows/ci.yml/badge.svg)](https://github.com/your-username/diskorbit/actions/workflows/ci.yml)
+[![CI](https://github.com/Vallaqan/diskorbit/actions/workflows/ci.yml/badge.svg)](https://github.com/Vallaqan/diskorbit/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 **DiskOrbit** is a fast, single-binary disk space analyzer with a dark orbital-themed GUI. Select a drive, hit Scan, and explore your file system as a sortable tree with inline usage bars — no installer, no setup.
@@ -24,7 +24,7 @@
 
 ## Download
 
-Pre-built binaries for every tagged release are available on the [Releases](https://github.com/your-username/diskorbit/releases) page:
+Pre-built binaries for every tagged release are available on the [Releases](https://github.com/Vallaqan/diskorbit/releases) page:
 
 | Platform | File |
 |---|---|
@@ -47,7 +47,7 @@ chmod +x diskorbit-*
 **Prerequisites:** [Rust toolchain](https://rustup.rs) (1.76+)
 
 ```sh
-git clone https://github.com/your-username/diskorbit.git
+git clone https://github.com/Vallaqan/diskorbit.git
 cd diskorbit
 
 # Debug build
