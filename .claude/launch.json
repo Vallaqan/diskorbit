@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "diskorbit (debug)",
+      "runtimeExecutable": "cargo",
+      "runtimeArgs": ["run"],
+      "port": 0
+    },
+    {
+      "name": "diskorbit (release)",
+      "runtimeExecutable": "cargo",
+      "runtimeArgs": ["run", "--release"],
+      "port": 0
+    }
+  ]
+}
