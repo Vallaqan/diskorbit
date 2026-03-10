@@ -42,6 +42,9 @@ pub struct DiskOrbitApp {
     total_bytes:    u64,
     expanded:       HashSet<String>,
     is_admin:       bool,
+    custom_path:    Option<String>,
+    browse_rx:      Option<mpsc::Receiver<Option<std::path::PathBuf>>>,
+    scan_root:      String,
 }
 
 impl DiskOrbitApp {
@@ -54,31 +57,45 @@ impl DiskOrbitApp {
             scan_rx:        None,
             cancel_flag:    Arc::new(AtomicBool::new(false)),
             is_scanning:    false,
-            status:         "Select a drive and click Scan.".into(),
+            status:         "Select a drive or browse to a folder, then click Scan.".into(),
             footer:         String::new(),
             used_bytes:     0,
             free_bytes:     0,
             total_bytes:    0,
             expanded:       HashSet::new(),
             is_admin:       is_admin(),
+            custom_path:    None,
+            browse_rx:      None,
+            scan_root:      String::new(),
         }
     }
 
     fn do_scan(&mut self) {
-        if self.drives.is_empty() { return; }
-        self.cancel_flag.store(true, Ordering::Relaxed);
+        let root = if let Some(ref p) = self.custom_path {
+            p.clone()
+        } else {
+            if self.drives.is_empty() { return; }
+            self.drives[self.selected_drive].clone()
+        };
 
-        let root = self.drives[self.selected_drive].clone();
+        self.cancel_flag.store(true, Ordering::Relaxed);
         self.scan_result = None;
         self.expanded.clear();
         self.is_scanning = true;
         self.status      = format!("Scanning {}…", root);
         self.footer      = String::new();
+        self.scan_root   = root.clone();
 
-        if let Some((used, free, total)) = drive_usage(&root) {
-            self.used_bytes  = used;
-            self.free_bytes  = free;
-            self.total_bytes = total;
+        if self.custom_path.is_none() {
+            if let Some((used, free, total)) = drive_usage(&root) {
+                self.used_bytes  = used;
+                self.free_bytes  = free;
+                self.total_bytes = total;
+            }
+        } else {
+            self.used_bytes  = 0;
+            self.free_bytes  = 0;
+            self.total_bytes = 0;
         }
 
         let cancel = Arc::new(AtomicBool::new(false));
@@ -87,6 +104,38 @@ impl DiskOrbitApp {
         let (tx, rx) = mpsc::channel();
         self.scan_rx  = Some(rx);
         start_scan(root, tx, cancel);
+    }
+
+    fn do_browse(&mut self) {
+        let (tx, rx) = mpsc::channel();
+        self.browse_rx = Some(rx);
+        std::thread::spawn(move || {
+            let picked = rfd::FileDialog::new().pick_folder();
+            let _ = tx.send(picked);
+        });
+    }
+
+    fn poll_browse(&mut self) {
+        let Some(rx) = &self.browse_rx else { return };
+        if let Ok(result) = rx.try_recv() {
+            if let Some(path) = result {
+                let path_str = path.to_string_lossy().into_owned();
+                // Normalise to trailing backslash so we can compare against the drives list
+                let normalised = if path_str.ends_with('\\') || path_str.ends_with('/') {
+                    path_str.clone()
+                } else {
+                    format!("{}\\", path_str)
+                };
+                if let Some(idx) = self.drives.iter().position(|d| *d == normalised) {
+                    // User picked a drive root — just select it in the combo
+                    self.selected_drive = idx;
+                    self.custom_path = None;
+                } else {
+                    self.custom_path = Some(path_str);
+                }
+            }
+            self.browse_rx = None;
+        }
     }
 
     fn do_cancel(&mut self) {
@@ -111,7 +160,7 @@ impl DiskOrbitApp {
                     }
                     self.footer      = format!(
                         "{}  ·  {} in {} items",
-                        self.drives.get(self.selected_drive).cloned().unwrap_or_default(),
+                        self.scan_root,
                         fmt_bytes(node.size_bytes),
                         count_items(&node),
                     );
@@ -144,6 +193,7 @@ impl DiskOrbitApp {
 impl eframe::App for DiskOrbitApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.poll_scan(ctx);
+        self.poll_browse();
 
         // Status bar
         egui::TopBottomPanel::bottom("statusbar")
@@ -204,18 +254,56 @@ impl DiskOrbitApp {
                         ui.horizontal(|ui: &mut egui::Ui| {
                             ui.spacing_mut().item_spacing.x = 8.0;
 
-                            // Drive combo
-                            egui::ComboBox::from_id_source("drives")
-                                .width(100.0)
-                                .selected_text(
-                                    self.drives.get(self.selected_drive)
-                                        .map(|s| s.as_str()).unwrap_or("—"),
+                            // Drive combo — greyed out when a custom browse path overrides it
+                            ui.add_enabled_ui(self.custom_path.is_none(), |ui: &mut egui::Ui| {
+                                egui::ComboBox::from_id_source("drives")
+                                    .width(100.0)
+                                    .selected_text(
+                                        self.drives.get(self.selected_drive)
+                                            .map(|s| s.as_str()).unwrap_or("—"),
+                                    )
+                                    .show_ui(ui, |ui: &mut egui::Ui| {
+                                        for (i, drive) in self.drives.iter().enumerate() {
+                                            if ui.selectable_value(&mut self.selected_drive, i, drive.clone()).clicked() {
+                                                self.custom_path = None;
+                                            }
+                                        }
+                                    });
+                            });
+
+                            // BROWSE
+                            let is_browsing = self.browse_rx.is_some();
+                            if ui.add_enabled(
+                                !is_browsing && !self.is_scanning,
+                                egui::Button::new(
+                                    RichText::new("BROWSE").color(TEXT_MUTED).font(mono(12.0))
                                 )
-                                .show_ui(ui, |ui: &mut egui::Ui| {
-                                    for (i, drive) in self.drives.iter().enumerate() {
-                                        ui.selectable_value(&mut self.selected_drive, i, drive.clone());
-                                    }
-                                });
+                                .fill(Color32::TRANSPARENT)
+                                .stroke(Stroke::new(1.0, BORDER))
+                                .rounding(4.0),
+                            ).clicked() {
+                                self.do_browse();
+                            }
+
+                            // Custom path indicator — shown when a folder was picked via browse
+                            let custom = self.custom_path.clone();
+                            if let Some(ref path) = custom {
+                                let display = if path.len() > 40 {
+                                    format!("…{}", &path[path.len()-38..])
+                                } else {
+                                    path.clone()
+                                };
+                                ui.label(RichText::new(format!("📁 {}", display)).color(ACCENT).font(mono(11.0)));
+                                if ui.add(
+                                    egui::Button::new(RichText::new("×").color(TEXT_MUTED).font(mono(11.0)))
+                                        .fill(Color32::TRANSPARENT)
+                                        .stroke(Stroke::new(1.0, BORDER))
+                                        .rounding(4.0)
+                                        .min_size(Vec2::new(22.0, 22.0)),
+                                ).clicked() {
+                                    self.custom_path = None;
+                                }
+                            }
 
                             // SCAN
                             let scan_enabled = !self.is_scanning;
@@ -246,8 +334,8 @@ impl DiskOrbitApp {
                                 }
                             }
 
-                            // Drive usage — right-aligned
-                            if self.total_bytes > 0 {
+                            // Drive usage — right-aligned, only for full-drive scans
+                            if self.total_bytes > 0 && self.custom_path.is_none() {
                                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui: &mut egui::Ui| {
                                     ui.label(RichText::new(fmt_bytes(self.total_bytes)).color(TEXT_PRIMARY).font(mono(11.0)));
                                     ui.label(RichText::new("TOTAL ").color(TEXT_DIM).font(mono(11.0)));
@@ -263,19 +351,6 @@ impl DiskOrbitApp {
                     });
                 });
 
-                // Usage bar — full width below controls
-                if self.total_bytes > 0 {
-                    ui.add_space(8.0);
-                    let pct = (self.used_bytes as f32 / self.total_bytes as f32).min(1.0);
-                    let (rect, _) = ui.allocate_exact_size(
-                        Vec2::new(ui.available_width(), 5.0),
-                        egui::Sense::hover(),
-                    );
-                    ui.painter().rect_filled(rect, 3.0, BAR_BG);
-                    let mut fill = rect;
-                    fill.max.x = rect.min.x + rect.width() * pct;
-                    ui.painter().rect_filled(fill, 3.0, ACCENT);
-                }
             });
     }
 
@@ -347,7 +422,7 @@ impl DiskOrbitApp {
                 } else {
                     ui.add_space(60.0);
                     ui.vertical_centered(|ui: &mut egui::Ui| {
-                        ui.label(RichText::new("Select a drive and click Scan").color(TEXT_DIM).font(mono(13.0)));
+                        ui.label(RichText::new("Select a drive or browse to a folder, then click Scan").color(TEXT_DIM).font(mono(13.0)));
                     });
                 }
             });
