@@ -30,8 +30,8 @@ fn load_icon(bytes: &[u8]) -> egui::viewport::IconData {
         .into_rgba8();
     let (w, h) = image.dimensions();
     egui::viewport::IconData {
-        rgba:   image.into_raw(),
-        width:  w,
+        rgba: image.into_raw(),
+        width: w,
         height: h,
     }
 }
