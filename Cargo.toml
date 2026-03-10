@@ -2,6 +2,13 @@
 name = "diskorbit"
 version = "1.0.0"
 edition = "2021"
+description = "Fast disk space analyzer with an orbital dark-themed GUI"
+repository = "https://github.com/your-username/diskorbit"
+license = "MIT"
+keywords = ["disk-space", "storage", "gui", "egui", "filesystem"]
+categories = ["visualization", "filesystem"]
+readme = "README.md"
+rust-version = "1.76"
 
 [dependencies]
 eframe = "0.27"
