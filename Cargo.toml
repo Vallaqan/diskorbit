@@ -8,6 +8,7 @@ eframe = "0.27"
 egui   = "0.27"
 rayon  = "1.10"
 image  = { version = "0.25", default-features = false, features = ["ico"] }
+rfd    = "0.14"
 
 [build-dependencies]
 winresource = "0.1"
